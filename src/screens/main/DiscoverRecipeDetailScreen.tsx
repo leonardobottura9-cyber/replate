@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -16,12 +17,12 @@ import {
   RecipeIngredient,
   DiscoverRecipe,
 } from '../../data/discoverRecipes';
+import { supabase } from '../../lib/supabase';
 
 type Props = NativeStackScreenProps<VaultStackParamList, 'DiscoverRecipeDetail'>;
-
 type Version = 'original' | 'replated';
 
-// ─── Delta helper ─────────────────────────────────────────────────────────────
+// ─── Delta helpers ────────────────────────────────────────────────────────────
 
 function deltaColor(before: number, after: number, lowerIsBetter: boolean, neutral = false): string {
   if (neutral) return Colors.text.muted;
@@ -38,7 +39,9 @@ function deltaText(before: number, after: number, unit: string): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function MacroChip({ label, value, unit, highlight }: { label: string; value: number; unit: string; highlight?: boolean }) {
+function MacroChip({ label, value, unit, highlight }: {
+  label: string; value: number; unit: string; highlight?: boolean;
+}) {
   return (
     <View style={[styles.macroChip, highlight && styles.macroChipHighlight]}>
       <Text style={styles.macroChipValue}>{value}{unit}</Text>
@@ -47,9 +50,7 @@ function MacroChip({ label, value, unit, highlight }: { label: string; value: nu
   );
 }
 
-function MacroCompareRow({
-  label, before, after, unit, lowerIsBetter, neutral,
-}: {
+function MacroCompareRow({ label, before, after, unit, lowerIsBetter, neutral }: {
   label: string; before: number; after: number; unit: string;
   lowerIsBetter?: boolean; neutral?: boolean;
 }) {
@@ -94,11 +95,105 @@ function InstructionList({ steps }: { steps: string[] }) {
   );
 }
 
+function MetaItem({ icon, label, value }: { icon: string; label: string; value: string }) {
+  return (
+    <View style={styles.metaItem}>
+      <Text style={styles.metaIcon}>{icon}</Text>
+      <Text style={styles.metaValue}>{value}</Text>
+      <Text style={styles.metaLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return <Text style={styles.sectionHeader}>{title}</Text>;
+}
+
+function VersionTab({ label, subtitle, active, onPress, accentColor }: {
+  label: string; subtitle: string; active: boolean;
+  onPress: () => void; accentColor?: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.versionTab,
+        active && (accentColor ? styles.versionTabActiveAccent : styles.versionTabActiveGray),
+      ]}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <Text style={[
+        styles.versionTabLabel,
+        active && (accentColor ? styles.versionTabLabelActiveAccent : styles.versionTabLabelActiveGray),
+      ]}>
+        {label}
+      </Text>
+      <Text style={[styles.versionTabSub, active && styles.versionTabSubActive]} numberOfLines={1}>
+        {subtitle}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
   const recipe = DISCOVER_RECIPES.find(r => r.id === route.params.recipeId);
   const [activeVersion, setActiveVersion] = useState<Version>('replated');
+  const [isSaved, setIsSaved] = useState(false);
+  const [savedRowId, setSavedRowId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!recipe) return;
+    checkIfSaved(recipe.id);
+  }, [recipe]);
+
+  async function checkIfSaved(recipeId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data } = await supabase
+      .from('recipes')
+      .select('id')
+      .eq('source_url', `discover:${recipeId}`)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (data) {
+      setIsSaved(true);
+      setSavedRowId(data.id);
+    }
+  }
+
+  async function handleToggleSave() {
+    if (!recipe || saving) return;
+    setSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      if (isSaved && savedRowId) {
+        await supabase.from('recipes').delete().eq('id', savedRowId);
+        setIsSaved(false);
+        setSavedRowId(null);
+      } else {
+        const { data, error } = await supabase.from('recipes').insert({
+          user_id: user.id,
+          title: recipe.name,
+          description: recipe.description,
+          source_url: `discover:${recipe.id}`,
+          image_url: null,
+          ingredients: recipe.replated.ingredients.map(i => `${i.amount} ${i.item}`),
+          instructions: recipe.replated.instructions.join('\n'),
+        }).select('id').single();
+        if (!error && data) {
+          setIsSaved(true);
+          setSavedRowId(data.id);
+        }
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
 
   if (!recipe) {
     return (
@@ -113,7 +208,7 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* ── Back bar ── */}
+      {/* ── Top bar ── */}
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Text style={styles.backArrow}>←</Text>
@@ -126,11 +221,12 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
         </View>
       </View>
 
+      {/* ── Scrollable content ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scroll}
       >
-        {/* ── Hero ── */}
+        {/* Hero */}
         <View style={styles.hero}>
           <View style={styles.heroEmoji}>
             <Text style={styles.heroEmojiText}>{recipe.emoji}</Text>
@@ -139,7 +235,7 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
           <Text style={styles.heroDescription}>{recipe.description}</Text>
         </View>
 
-        {/* ── Time & servings bar ── */}
+        {/* Time & servings */}
         <View style={styles.metaBar}>
           <MetaItem icon="⏱" label="Prep" value={recipe.prepTime} />
           <View style={styles.metaDivider} />
@@ -148,7 +244,7 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
           <MetaItem icon="🍽" label="Serves" value={String(recipe.servings)} />
         </View>
 
-        {/* ── Macro comparison ── */}
+        {/* Macro comparison */}
         <SectionHeader title="Macro Comparison" />
         <View style={styles.card}>
           <View style={styles.compareHeaderRow}>
@@ -160,12 +256,12 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
           </View>
           <View style={styles.cardDivider} />
           <MacroCompareRow label="Calories" before={recipe.original.macros.calories} after={recipe.replated.macros.calories} unit="" lowerIsBetter />
-          <MacroCompareRow label="Protein" before={recipe.original.macros.protein} after={recipe.replated.macros.protein} unit="g" lowerIsBetter={false} />
-          <MacroCompareRow label="Fat" before={recipe.original.macros.fat} after={recipe.replated.macros.fat} unit="g" lowerIsBetter />
-          <MacroCompareRow label="Carbs" before={recipe.original.macros.carbs} after={recipe.replated.macros.carbs} unit="g" neutral />
+          <MacroCompareRow label="Protein"  before={recipe.original.macros.protein}  after={recipe.replated.macros.protein}  unit="g" lowerIsBetter={false} />
+          <MacroCompareRow label="Fat"      before={recipe.original.macros.fat}      after={recipe.replated.macros.fat}      unit="g" lowerIsBetter />
+          <MacroCompareRow label="Carbs"    before={recipe.original.macros.carbs}    after={recipe.replated.macros.carbs}    unit="g" neutral />
         </View>
 
-        {/* ── Key swaps + tip ── */}
+        {/* Key swaps + tip */}
         <SectionHeader title="Key Swaps" />
         <View style={styles.card}>
           <View style={styles.swapTagsRow}>
@@ -181,7 +277,7 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {/* ── Version toggle ── */}
+        {/* Version toggle */}
         <SectionHeader title="How to Make It" />
         <View style={styles.versionToggle}>
           <VersionTab
@@ -199,15 +295,15 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
           />
         </View>
 
-        {/* ── Macro summary for selected version ── */}
+        {/* Macro chips for selected version */}
         <View style={styles.macroRow}>
-          <MacroChip label="Cal" value={version.macros.calories} unit="" highlight={activeVersion === 'replated'} />
-          <MacroChip label="Protein" value={version.macros.protein} unit="g" highlight={activeVersion === 'replated'} />
-          <MacroChip label="Fat" value={version.macros.fat} unit="g" highlight={activeVersion === 'replated'} />
-          <MacroChip label="Carbs" value={version.macros.carbs} unit="g" highlight={activeVersion === 'replated'} />
+          <MacroChip label="Cal"    value={version.macros.calories} unit=""  highlight={activeVersion === 'replated'} />
+          <MacroChip label="Protein" value={version.macros.protein}  unit="g" highlight={activeVersion === 'replated'} />
+          <MacroChip label="Fat"    value={version.macros.fat}      unit="g" highlight={activeVersion === 'replated'} />
+          <MacroChip label="Carbs"  value={version.macros.carbs}   unit="g" highlight={activeVersion === 'replated'} />
         </View>
 
-        {/* ── Ingredients ── */}
+        {/* Ingredients */}
         <View style={styles.subSectionHeader}>
           <Text style={styles.subSectionTitle}>Ingredients</Text>
           <Text style={styles.subSectionMeta}>serves {recipe.servings}</Text>
@@ -216,7 +312,7 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
           <IngredientList ingredients={version.ingredients} />
         </View>
 
-        {/* ── Instructions ── */}
+        {/* Instructions */}
         <View style={styles.subSectionHeader}>
           <Text style={styles.subSectionTitle}>Instructions</Text>
         </View>
@@ -226,45 +322,30 @@ export function DiscoverRecipeDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.bottomPad} />
       </ScrollView>
+
+      {/* ── Sticky save bar ── */}
+      <View style={styles.saveBar}>
+        <TouchableOpacity
+          style={[styles.saveButton, isSaved && styles.saveButtonSaved]}
+          onPress={handleToggleSave}
+          activeOpacity={0.85}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color={isSaved ? Colors.white : Colors.accent} size="small" />
+          ) : (
+            <>
+              <Text style={[styles.saveIcon, isSaved && styles.saveIconSaved]}>
+                {isSaved ? '♥' : '♡'}
+              </Text>
+              <Text style={[styles.saveText, isSaved && styles.saveTextSaved]}>
+                {isSaved ? 'Saved to My Recipes' : 'Save to My Recipes'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
-  );
-}
-
-// ─── Helper sub-components ────────────────────────────────────────────────────
-
-function MetaItem({ icon, label, value }: { icon: string; label: string; value: string }) {
-  return (
-    <View style={styles.metaItem}>
-      <Text style={styles.metaIcon}>{icon}</Text>
-      <Text style={styles.metaValue}>{value}</Text>
-      <Text style={styles.metaLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title}</Text>;
-}
-
-function VersionTab({
-  label, subtitle, active, onPress, accentColor,
-}: {
-  label: string; subtitle: string; active: boolean;
-  onPress: () => void; accentColor?: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.versionTab, active && (accentColor ? styles.versionTabActiveAccent : styles.versionTabActiveGray)]}
-      onPress={onPress}
-      activeOpacity={0.75}
-    >
-      <Text style={[styles.versionTabLabel, active && (accentColor ? styles.versionTabLabelActiveAccent : styles.versionTabLabelActiveGray)]}>
-        {label}
-      </Text>
-      <Text style={[styles.versionTabSub, active && styles.versionTabSubActive]} numberOfLines={1}>
-        {subtitle}
-      </Text>
-    </TouchableOpacity>
   );
 }
 
@@ -282,7 +363,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // Top bar
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -325,7 +405,6 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
 
-  // Hero
   hero: {
     alignItems: 'center',
     marginBottom: 20,
@@ -356,7 +435,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Meta bar
   metaBar: {
     flexDirection: 'row',
     backgroundColor: Colors.white,
@@ -395,7 +473,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Section headings
   sectionHeader: {
     fontSize: 13,
     fontWeight: '700',
@@ -422,7 +499,6 @@ const styles = StyleSheet.create({
     color: Colors.text.muted,
   },
 
-  // Shared card
   card: {
     backgroundColor: Colors.white,
     borderRadius: 14,
@@ -437,7 +513,6 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
 
-  // Macro comparison table
   compareHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -489,7 +564,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
-  // Key swaps
   swapTagsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -529,7 +603,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // Version toggle
   versionToggle: {
     flexDirection: 'row',
     gap: 8,
@@ -572,7 +645,6 @@ const styles = StyleSheet.create({
     color: Colors.text.secondary,
   },
 
-  // Macro chips row
   macroRow: {
     flexDirection: 'row',
     gap: 8,
@@ -605,7 +677,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Ingredients
   ingredientList: {
     gap: 10,
   },
@@ -635,7 +706,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Instructions
   instructionList: {
     gap: 14,
   },
@@ -667,6 +737,47 @@ const styles = StyleSheet.create({
   },
 
   bottomPad: {
-    height: 40,
+    height: 24,
+  },
+
+  // Save bar
+  saveBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 16,
+    backgroundColor: Colors.white,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.accent,
+    backgroundColor: Colors.white,
+  },
+  saveButtonSaved: {
+    backgroundColor: Colors.accent,
+    borderColor: Colors.accent,
+  },
+  saveIcon: {
+    fontSize: 20,
+    color: Colors.accent,
+    lineHeight: 24,
+  },
+  saveIconSaved: {
+    color: Colors.white,
+  },
+  saveText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.accent,
+  },
+  saveTextSaved: {
+    color: Colors.white,
   },
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
-  Image,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../../lib/supabase';
 import { Colors } from '../../constants/colors';
 import { Recipe } from '../../types';
@@ -20,90 +20,90 @@ import {
   DISCOVER_RECIPES,
   CATEGORIES,
   type Category,
+  type DiscoverRecipe,
 } from '../../data/discoverRecipes';
 
-type ActiveTab = 'vault' | 'discover';
+type ActiveTab = 'saved' | 'discover';
 type FilterCategory = Category | 'all';
 
 // ─── Root screen ─────────────────────────────────────────────────────────────
 
 export function RecipeVaultScreen() {
-  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [savedRecipes, setSavedRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('vault');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('saved');
   const [discoverFilter, setDiscoverFilter] = useState<FilterCategory>('all');
   const discoverListRef = useRef<FlatList>(null);
 
-  const fetchRecipes = useCallback(async () => {
+  const fetchSavedRecipes = useCallback(async () => {
     const { data, error } = await supabase
       .from('recipes')
       .select('*')
+      .like('source_url', 'discover:%')
       .order('created_at', { ascending: false });
 
-    if (!error && data) setRecipes(data as Recipe[]);
+    if (!error && data) setSavedRecipes(data as Recipe[]);
     setLoading(false);
     setRefreshing(false);
   }, []);
 
-  useEffect(() => {
-    fetchRecipes();
-  }, [fetchRecipes]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchSavedRecipes();
+    }, [fetchSavedRecipes])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchRecipes();
-  }, [fetchRecipes]);
-
-  function handleTabChange(tab: ActiveTab) {
-    setActiveTab(tab);
-  }
+    fetchSavedRecipes();
+  }, [fetchSavedRecipes]);
 
   function handleCategoryChange(cat: FilterCategory) {
     setDiscoverFilter(cat);
     discoverListRef.current?.scrollToOffset({ offset: 0, animated: true });
   }
 
+  // Map saved Supabase rows back to DiscoverRecipe objects
+  const savedDiscoverRecipes: DiscoverRecipe[] = savedRecipes
+    .map(r => DISCOVER_RECIPES.find(d => r.source_url === `discover:${d.id}`))
+    .filter((r): r is DiscoverRecipe => r !== undefined);
+
   const filteredDiscover =
     discoverFilter === 'all'
       ? DISCOVER_RECIPES
-      : DISCOVER_RECIPES.filter((r) => r.category === discoverFilter);
+      : DISCOVER_RECIPES.filter(r => r.category === discoverFilter);
 
   if (loading) return <LoadingSpinner />;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* ── Shared header ── */}
+      {/* ── Header ── */}
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Recipe Vault</Text>
           <Text style={styles.subtitle}>
-            {activeTab === 'vault'
-              ? `${recipes.length} saved recipe${recipes.length !== 1 ? 's' : ''}`
+            {activeTab === 'saved'
+              ? `${savedDiscoverRecipes.length} saved recipe${savedDiscoverRecipes.length !== 1 ? 's' : ''}`
               : `${filteredDiscover.length} healthy recipes`}
           </Text>
         </View>
-        {activeTab === 'vault' && (
-          <TouchableOpacity style={styles.addButton}>
-            <Text style={styles.addButtonText}>+</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* ── Tab toggle ── */}
       <View style={styles.tabRow}>
         <TouchableOpacity
-          style={[styles.tabPill, activeTab === 'vault' && styles.tabPillActive]}
-          onPress={() => handleTabChange('vault')}
+          style={[styles.tabPill, activeTab === 'saved' && styles.tabPillActive]}
+          onPress={() => setActiveTab('saved')}
           activeOpacity={0.7}
         >
-          <Text style={[styles.tabPillText, activeTab === 'vault' && styles.tabPillTextActive]}>
-            🥘  My Vault
+          <Text style={[styles.tabPillText, activeTab === 'saved' && styles.tabPillTextActive]}>
+            🥘  My Recipes
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tabPill, activeTab === 'discover' && styles.tabPillActive]}
-          onPress={() => handleTabChange('discover')}
+          onPress={() => setActiveTab('discover')}
           activeOpacity={0.7}
         >
           <Text style={[styles.tabPillText, activeTab === 'discover' && styles.tabPillTextActive]}>
@@ -112,34 +112,27 @@ export function RecipeVaultScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ── My Vault tab ── */}
-      {activeTab === 'vault' && (
+      {/* ── My Recipes tab ── */}
+      {activeTab === 'saved' && (
         <FlatList
-          data={recipes}
-          keyExtractor={(item) => item.id}
+          data={savedDiscoverRecipes}
+          keyExtractor={item => item.id}
           contentContainerStyle={[
             styles.listContent,
-            recipes.length === 0 && styles.listContentEmpty,
+            savedDiscoverRecipes.length === 0 && styles.listContentEmpty,
           ]}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor={Colors.accent}
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.accent} />
           }
           ListEmptyComponent={
             <EmptyState
               icon="🥘"
-              title="Your vault is empty"
-              subtitle="Save your favourite recipes here and access them anytime, even offline."
-              actionLabel="Add First Recipe"
-              onAction={() => {}}
+              title="No saved recipes yet"
+              subtitle="Browse Discover and tap 'Save to My Recipes' on any recipe to find it here."
             />
           }
-          renderItem={({ item }) => <RecipeCard recipe={item} />}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={({ item }) => <DiscoverRecipeCard recipe={item} />}
         />
       )}
 
@@ -148,7 +141,7 @@ export function RecipeVaultScreen() {
         <FlatList
           ref={discoverListRef}
           data={filteredDiscover}
-          keyExtractor={(item) => item.id}
+          keyExtractor={item => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={
@@ -171,7 +164,7 @@ export function RecipeVaultScreen() {
   );
 }
 
-// ─── Discover section header (category pills) ─────────────────────────────────
+// ─── Discover section header ──────────────────────────────────────────────────
 
 function DiscoverHeader({
   activeCategory,
@@ -184,21 +177,18 @@ function DiscoverHeader({
 }) {
   return (
     <View style={styles.discoverHeader}>
-      {/* Tagline */}
       <View style={styles.discoverTagline}>
         <Text style={styles.discoverTaglineTitle}>Healthy Inspiration</Text>
         <Text style={styles.discoverTaglineBody}>
           Browse original recipes alongside their smarter Replated versions — with full macro comparisons.
         </Text>
       </View>
-
-      {/* Category pills */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.categoryScroll}
       >
-        {CATEGORIES.map((cat) => {
+        {CATEGORIES.map(cat => {
           const isActive = activeCategory === cat.id;
           return (
             <TouchableOpacity
@@ -208,51 +198,17 @@ function DiscoverHeader({
               activeOpacity={0.7}
             >
               <Text style={styles.categoryPillEmoji}>{cat.emoji}</Text>
-              <Text
-                style={[
-                  styles.categoryPillLabel,
-                  isActive && styles.categoryPillLabelActive,
-                ]}
-              >
+              <Text style={[styles.categoryPillLabel, isActive && styles.categoryPillLabelActive]}>
                 {cat.label}
               </Text>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
-
-      {/* Result count */}
       <Text style={styles.discoverCount}>
         {recipeCount} recipe{recipeCount !== 1 ? 's' : ''}
       </Text>
     </View>
-  );
-}
-
-// ─── My Vault recipe card ─────────────────────────────────────────────────────
-
-function RecipeCard({ recipe }: { recipe: Recipe }) {
-  return (
-    <TouchableOpacity style={styles.card} activeOpacity={0.75}>
-      {recipe.image_url ? (
-        <Image source={{ uri: recipe.image_url }} style={styles.cardImage} />
-      ) : (
-        <View style={styles.cardImagePlaceholder}>
-          <Text style={styles.cardImageEmoji}>🍽</Text>
-        </View>
-      )}
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle} numberOfLines={2}>{recipe.title}</Text>
-        {recipe.description && (
-          <Text style={styles.cardDescription} numberOfLines={2}>{recipe.description}</Text>
-        )}
-        {recipe.source_url && (
-          <Text style={styles.cardSource} numberOfLines={1}>
-            {new URL(recipe.source_url).hostname.replace('www.', '')}
-          </Text>
-        )}
-      </View>
-    </TouchableOpacity>
   );
 }
 
@@ -264,11 +220,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
   },
 
-  // Header
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
@@ -283,22 +235,7 @@ const styles = StyleSheet.create({
     color: Colors.text.muted,
     marginTop: 2,
   },
-  addButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addButtonText: {
-    fontSize: 26,
-    color: Colors.white,
-    lineHeight: 30,
-    marginTop: -2,
-  },
 
-  // Tab toggle
   tabRow: {
     flexDirection: 'row',
     paddingHorizontal: 20,
@@ -325,7 +262,6 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
 
-  // Lists
   listContent: {
     paddingHorizontal: 20,
     paddingBottom: 32,
@@ -333,11 +269,7 @@ const styles = StyleSheet.create({
   listContentEmpty: {
     flexGrow: 1,
   },
-  separator: {
-    height: 12,
-  },
 
-  // Discover header
   discoverHeader: {
     paddingBottom: 12,
   },
@@ -398,7 +330,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // No results
   noResults: {
     alignItems: 'center',
     paddingVertical: 48,
@@ -410,52 +341,5 @@ const styles = StyleSheet.create({
   noResultsText: {
     fontSize: 15,
     color: Colors.text.muted,
-  },
-
-  // My Vault card
-  card: {
-    flexDirection: 'row',
-    backgroundColor: Colors.card,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  cardImage: {
-    width: 100,
-    height: 100,
-  },
-  cardImagePlaceholder: {
-    width: 100,
-    height: 100,
-    backgroundColor: Colors.gray100,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardImageEmoji: {
-    fontSize: 36,
-  },
-  cardContent: {
-    flex: 1,
-    padding: 14,
-    justifyContent: 'center',
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.text.primary,
-    marginBottom: 4,
-    lineHeight: 20,
-  },
-  cardDescription: {
-    fontSize: 13,
-    color: Colors.text.secondary,
-    lineHeight: 18,
-    marginBottom: 6,
-  },
-  cardSource: {
-    fontSize: 12,
-    color: Colors.accent,
-    fontWeight: '500',
   },
 });
