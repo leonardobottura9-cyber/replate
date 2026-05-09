@@ -3,7 +3,7 @@ import { Text } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types';
 import { Colors } from '../constants/colors';
-import { RecipeVaultScreen } from '../screens/main/RecipeVaultScreen';
+import { VaultStackNavigator } from './VaultStackNavigator';
 import { SwapsScreen } from '../screens/main/SwapsScreen';
 import { VideosScreen } from '../screens/main/VideosScreen';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
@@ -39,7 +39,7 @@ export function MainNavigator() {
     >
       <Tab.Screen
         name="RecipeVault"
-        component={RecipeVaultScreen}
+        component={VaultStackNavigator}
         options={{
           title: 'Vault',
           tabBarIcon: ({ focused }) => <TabIcon emoji="🥘" focused={focused} />,

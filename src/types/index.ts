@@ -38,6 +38,18 @@ export interface MacroInfo {
   fiber?: number;
 }
 
+export interface SwapSuggestion {
+  original: {
+    ingredient: string;
+    macros: MacroInfo;
+  };
+  swap: {
+    ingredient: string;
+    macros: MacroInfo;
+    reason: string;
+  };
+}
+
 export interface SavedVideo {
   id: string;
   user_id: string;
@@ -63,4 +75,9 @@ export type MainTabParamList = {
   Swaps: undefined;
   Videos: undefined;
   Profile: undefined;
+};
+
+export type VaultStackParamList = {
+  RecipeVaultMain: undefined;
+  DiscoverRecipeDetail: { recipeId: string };
 };
