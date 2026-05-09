@@ -50,6 +50,36 @@ export interface SwapSuggestion {
   };
 }
 
+export interface IngredientAnalysis {
+  original: string;
+  decision: 'swap' | 'keep';
+  replacement: string | null;
+  why: string;
+  originalMacros: { calories: number; protein: number; fat: number; carbs: number };
+  replacementMacros: { calories: number; protein: number; fat: number; carbs: number };
+}
+
+export interface ReplatedAnalysis {
+  recipeName: string;
+  intro: string;
+  ingredients: IngredientAnalysis[];
+  replatedRecipe: {
+    ingredients: string[];
+    instructions: string[];
+  };
+  totals: {
+    originalCalories: number;
+    replatedCalories: number;
+    originalProtein: number;
+    replatedProtein: number;
+    originalFat: number;
+    replatedFat: number;
+  };
+  celebration: {
+    message: string;
+  };
+}
+
 export interface SavedVideo {
   id: string;
   user_id: string;
