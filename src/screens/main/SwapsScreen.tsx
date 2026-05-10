@@ -11,9 +11,16 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as SecureStore from 'expo-secure-store';
 import { Colors } from '../../constants/colors';
 import { analyzeSwaps } from '../../lib/swapEngine';
 import { ReplatedAnalysis, IngredientAnalysis } from '../../types';
+
+async function incrementSwapCount() {
+  const val = await SecureStore.getItemAsync('replate_swap_count');
+  const next = val ? parseInt(val, 10) + 1 : 1;
+  await SecureStore.setItemAsync('replate_swap_count', String(next));
+}
 
 type ScreenState = 'idle' | 'loading' | 'results' | 'error';
 
@@ -253,6 +260,7 @@ export function SwapsScreen() {
       const result = await analyzeSwaps(input.trim());
       setAnalysis(result);
       setScreenState('results');
+      incrementSwapCount();
       setTimeout(() => scrollRef.current?.scrollTo({ y: 0, animated: false }), 50);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
