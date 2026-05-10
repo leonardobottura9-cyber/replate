@@ -10,6 +10,10 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  Modal,
+  Linking,
+  Pressable,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,6 +26,9 @@ const WARM_WHITE = '#FAFAF7';
 const APP_VERSION = '1.0.0';
 const NOTIFICATIONS_KEY = 'replate_notifications';
 const SWAP_COUNT_KEY = 'replate_swap_count';
+
+const TERMS_URL = 'https://replate.app/terms';
+const PRIVACY_URL = 'https://replate.app/privacy';
 
 interface Stats {
   savedRecipes: number;
@@ -44,6 +51,86 @@ function StatCard({ label, value, loading }: { label: string; value: number; loa
   );
 }
 
+// ─── Edit Name Modal ──────────────────────────────────────────────────────────
+
+interface EditNameModalProps {
+  visible: boolean;
+  initialName: string;
+  onClose: () => void;
+  onSaved: (name: string) => void;
+}
+
+function EditNameModal({ visible, initialName, onClose, onSaved }: EditNameModalProps) {
+  const [name, setName] = useState(initialName);
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) setName(initialName);
+  }, [visible, initialName]);
+
+  async function handleSave() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    const { error } = await supabase.auth.updateUser({ data: { name: trimmed } });
+    setSaving(false);
+    if (error) {
+      Alert.alert('Error', 'Could not update your name. Please try again.');
+    } else {
+      onSaved(trimmed);
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable style={styles.modalOverlay} onPress={onClose}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalKAV}
+        >
+          <Pressable style={styles.modalSheet} onPress={() => {}}>
+            <View style={styles.sheetHandle} />
+
+            <Text style={styles.sheetTitle}>Edit Profile</Text>
+            <Text style={styles.sheetSubtitle}>Update the name shown on your account.</Text>
+
+            <Text style={styles.fieldLabel}>Display Name</Text>
+            <TextInput
+              style={styles.editInput}
+              value={name}
+              onChangeText={setName}
+              placeholder="Your name"
+              placeholderTextColor="#A8A8A2"
+              autoFocus
+              autoCapitalize="words"
+              returnKeyType="done"
+              onSubmitEditing={handleSave}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveBtn, (!name.trim() || saving) && styles.saveBtnDisabled]}
+                onPress={handleSave}
+                disabled={!name.trim() || saving}
+                activeOpacity={0.8}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveBtnText}>Save</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export function ProfileScreen() {
@@ -52,17 +139,15 @@ export function ProfileScreen() {
   const [stats, setStats] = useState<Stats>({ savedRecipes: 0, savedVideos: 0, swapsDone: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
 
-  const [editingName, setEditingName] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [savingName, setSavingName] = useState(false);
-
+  const [editModalVisible, setEditModalVisible] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
 
-  const initial = (user?.email?.[0] ?? 'U').toUpperCase();
   const displayName =
     user?.user_metadata?.name ??
     (user?.email ? user.email.split('@')[0] : 'User');
+
+  const initial = (displayName[0] ?? 'U').toUpperCase();
 
   const loadStats = useCallback(async () => {
     setStatsLoading(true);
@@ -93,21 +178,12 @@ export function ProfileScreen() {
     await SecureStore.setItemAsync(NOTIFICATIONS_KEY, String(val));
   }
 
-  function handleEditProfile() {
-    setEditName(displayName);
-    setEditingName(true);
-  }
-
-  async function handleSaveName() {
-    const trimmed = editName.trim();
-    if (!trimmed) return;
-    setSavingName(true);
-    const { error } = await supabase.auth.updateUser({ data: { name: trimmed } });
-    setSavingName(false);
-    if (error) {
-      Alert.alert('Error', 'Could not update your name. Please try again.');
+  async function handleOpenLink(url: string) {
+    const canOpen = await Linking.canOpenURL(url);
+    if (canOpen) {
+      await Linking.openURL(url);
     } else {
-      setEditingName(false);
+      Alert.alert('Cannot open link', 'Please visit ' + url);
     }
   }
 
@@ -127,10 +203,8 @@ export function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
         {/* ── Page header ── */}
         <View style={styles.pageHeader}>
           <Text style={styles.pageTitle}>Profile</Text>
@@ -158,10 +232,9 @@ export function ProfileScreen() {
         <Text style={styles.sectionLabel}>MY ACCOUNT</Text>
         <View style={styles.card}>
 
-          {/* Edit Profile */}
           <TouchableOpacity
             style={styles.cardRow}
-            onPress={handleEditProfile}
+            onPress={() => setEditModalVisible(true)}
             activeOpacity={0.7}
           >
             <Text style={styles.rowIcon}>✏️</Text>
@@ -169,38 +242,8 @@ export function ProfileScreen() {
             <Text style={styles.rowChevron}>›</Text>
           </TouchableOpacity>
 
-          {editingName && (
-            <View style={styles.editZone}>
-              <TextInput
-                style={styles.editInput}
-                value={editName}
-                onChangeText={setEditName}
-                placeholder="Your name"
-                placeholderTextColor="#A8A8A2"
-                autoFocus
-                autoCapitalize="words"
-              />
-              <View style={styles.editActions}>
-                <TouchableOpacity
-                  style={styles.editCancelBtn}
-                  onPress={() => setEditingName(false)}
-                >
-                  <Text style={styles.editCancelText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.editSaveBtn, savingName && { opacity: 0.6 }]}
-                  onPress={handleSaveName}
-                  disabled={savingName}
-                >
-                  <Text style={styles.editSaveText}>{savingName ? 'Saving…' : 'Save'}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
           <View style={styles.cardDivider} />
 
-          {/* Notifications toggle */}
           <View style={[styles.cardRow, styles.cardRowSwitch]}>
             <Text style={styles.rowIcon}>🔔</Text>
             <Text style={styles.rowLabel}>Notifications</Text>
@@ -219,12 +262,39 @@ export function ProfileScreen() {
 
           <View style={styles.cardDivider} />
 
-          {/* App version */}
           <View style={styles.cardRow}>
             <Text style={styles.rowIcon}>📱</Text>
             <Text style={styles.rowLabel}>App Version</Text>
             <Text style={styles.rowValue}>{APP_VERSION}</Text>
           </View>
+
+        </View>
+
+        {/* ── Legal ── */}
+        <Text style={styles.sectionLabel}>LEGAL</Text>
+        <View style={styles.card}>
+
+          <TouchableOpacity
+            style={styles.cardRow}
+            onPress={() => handleOpenLink(TERMS_URL)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.rowIcon}>📄</Text>
+            <Text style={styles.rowLabel}>Terms of Use</Text>
+            <Text style={styles.rowChevron}>›</Text>
+          </TouchableOpacity>
+
+          <View style={styles.cardDivider} />
+
+          <TouchableOpacity
+            style={styles.cardRow}
+            onPress={() => handleOpenLink(PRIVACY_URL)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.rowIcon}>🔒</Text>
+            <Text style={styles.rowLabel}>Privacy Policy</Text>
+            <Text style={styles.rowChevron}>›</Text>
+          </TouchableOpacity>
 
         </View>
 
@@ -243,6 +313,13 @@ export function ProfileScreen() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      <EditNameModal
+        visible={editModalVisible}
+        initialName={displayName}
+        onClose={() => setEditModalVisible(false)}
+        onSaved={() => setEditModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -373,7 +450,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E8E8E4',
     overflow: 'hidden',
-    marginBottom: 32,
+    marginBottom: 28,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
@@ -418,59 +495,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Inline edit zone
-  editZone: {
-    backgroundColor: '#F5F5F2',
-    borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 16,
-  },
-  editInput: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: GREEN + '55',
-    paddingHorizontal: 13,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#1A1A1A',
-    marginBottom: 12,
-  },
-  editActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  editCancelBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#E0E0DC',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  editCancelText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  editSaveBtn: {
-    flex: 1,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: GREEN,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  editSaveText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
   // Logout
   logoutBtn: {
     alignSelf: 'center',
@@ -487,5 +511,96 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#9E9E9A',
+  },
+
+  // Edit Name Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalKAV: {
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 40,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E0E0DC',
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  sheetTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginBottom: 6,
+  },
+  sheetSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  editInput: {
+    backgroundColor: WARM_WHITE,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: GREEN + '55',
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 15,
+    color: '#1A1A1A',
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F5F5F2',
+    borderWidth: 1,
+    borderColor: '#E0E0DC',
+  },
+  cancelBtnText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  saveBtn: {
+    flex: 2,
+    height: 52,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: GREEN,
+  },
+  saveBtnDisabled: {
+    opacity: 0.45,
+  },
+  saveBtnText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
