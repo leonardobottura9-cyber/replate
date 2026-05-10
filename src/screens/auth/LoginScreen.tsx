@@ -6,15 +6,17 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   TouchableOpacity,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { Colors } from '../../constants/colors';
-import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+
+const GREEN = '#1A3C34';
+const WARM_WHITE = '#FAFAF7';
+const ORANGE = '#E8845A';
 
 type Props = {
   navigation: NativeStackNavigationProp<AuthStackParamList, 'Login'>;
@@ -24,7 +26,7 @@ export function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
 
   function validate(): boolean {
     const newErrors: typeof errors = {};
@@ -39,33 +41,48 @@ export function LoginScreen({ navigation }: Props) {
   async function handleLogin() {
     if (!validate()) return;
     setLoading(true);
+    setErrors({});
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
     setLoading(false);
-    if (error) Alert.alert('Login Failed', error.message);
+    if (error) {
+      setErrors({ general: 'Incorrect email or password. Please try again.' });
+    }
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.header}>
-          <Text style={styles.logo}>🥘</Text>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to your Recipe Vault</Text>
+        {/* Green header */}
+        <View style={styles.heroBlock}>
+          <Text style={styles.heroEmoji}>🥗</Text>
+          <Text style={styles.heroTitle}>Replate</Text>
+          <Text style={styles.heroTagline}>Eat the same. Just smarter.</Text>
         </View>
 
-        <View style={styles.form}>
+        {/* White form card */}
+        <ScrollView
+          style={styles.formCard}
+          contentContainerStyle={styles.formContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.formTitle}>Welcome back</Text>
+          <Text style={styles.formSubtitle}>Sign in to your account</Text>
+
+          {errors.general ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{errors.general}</Text>
+            </View>
+          ) : null}
+
           <Input
             label="Email"
             placeholder="you@example.com"
             value={email}
-            onChangeText={setEmail}
+            onChangeText={text => { setEmail(text); setErrors(e => ({ ...e, email: undefined, general: undefined })); }}
             keyboardType="email-address"
             error={errors.email}
             autoComplete="email"
@@ -74,78 +91,138 @@ export function LoginScreen({ navigation }: Props) {
             label="Password"
             placeholder="Your password"
             value={password}
-            onChangeText={setPassword}
+            onChangeText={text => { setPassword(text); setErrors(e => ({ ...e, password: undefined, general: undefined })); }}
             secureToggle
             error={errors.password}
             autoComplete="password"
           />
 
-          <Button
-            title="Sign In"
+          <TouchableOpacity
+            style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
             onPress={handleLogin}
-            loading={loading}
-            style={styles.loginButton}
-          />
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-            <Text style={styles.footerLink}>Create one</Text>
+            disabled={loading}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.primaryButtonText}>{loading ? 'Signing in…' : 'Sign In'}</Text>
           </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+              <Text style={styles.footerLink}>Create one</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: GREEN,
+  },
   flex: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
-  container: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 80,
-    paddingBottom: 40,
-  },
-  header: {
+
+  heroBlock: {
     alignItems: 'center',
-    marginBottom: 48,
+    paddingTop: 28,
+    paddingBottom: 32,
+    backgroundColor: GREEN,
   },
-  logo: {
-    fontSize: 64,
-    marginBottom: 20,
+  heroEmoji: {
+    fontSize: 52,
+    marginBottom: 10,
   },
-  title: {
-    fontSize: 30,
+  heroTitle: {
+    fontSize: 34,
     fontWeight: '800',
-    color: Colors.text.primary,
-    marginBottom: 8,
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+    marginBottom: 6,
   },
-  subtitle: {
-    fontSize: 16,
-    color: Colors.text.secondary,
+  heroTagline: {
+    fontSize: 15,
+    color: 'rgba(255,255,255,0.7)',
+    fontWeight: '500',
   },
-  form: {
-    marginBottom: 32,
+
+  formCard: {
+    flex: 1,
+    backgroundColor: WARM_WHITE,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
   },
-  loginButton: {
+  formContent: {
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 48,
+  },
+  formTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: GREEN,
+    marginBottom: 4,
+  },
+  formSubtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 24,
+  },
+
+  errorBanner: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    fontSize: 14,
+    color: '#B91C1C',
+    lineHeight: 20,
+  },
+
+  primaryButton: {
+    backgroundColor: ORANGE,
+    borderRadius: 14,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
     marginTop: 8,
+    shadowColor: ORANGE,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
+  primaryButtonDisabled: {
+    opacity: 0.65,
+  },
+  primaryButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    marginTop: 28,
   },
   footerText: {
     fontSize: 15,
-    color: Colors.text.secondary,
+    color: '#6B7280',
   },
   footerLink: {
     fontSize: 15,
-    fontWeight: '600',
-    color: Colors.accent,
+    fontWeight: '700',
+    color: ORANGE,
   },
 });
