@@ -187,6 +187,24 @@ export function ProfileScreen() {
     }
   }
 
+  async function handleResetOnboarding() {
+    Alert.alert(
+      'Reset Onboarding',
+      'This will clear the onboarding flag and sign you out so you can see the onboarding flow again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            await SecureStore.deleteItemAsync('onboarding_complete');
+            await supabase.auth.signOut();
+          },
+        },
+      ],
+    );
+  }
+
   async function handleSignOut() {
     Alert.alert('Log out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -296,6 +314,20 @@ export function ProfileScreen() {
             <Text style={styles.rowChevron}>›</Text>
           </TouchableOpacity>
 
+        </View>
+
+        {/* ── Developer ── */}
+        <Text style={styles.sectionLabel}>DEVELOPER</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.cardRow}
+            onPress={handleResetOnboarding}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.rowIcon}>🔁</Text>
+            <Text style={[styles.rowLabel, styles.rowLabelDev]}>Reset Onboarding</Text>
+            <Text style={styles.rowChevron}>›</Text>
+          </TouchableOpacity>
         </View>
 
         {/* ── Log out ── */}
@@ -493,6 +525,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#A8A8A2',
     fontWeight: '500',
+  },
+
+  rowLabelDev: {
+    color: '#E8845A',
   },
 
   // Logout
