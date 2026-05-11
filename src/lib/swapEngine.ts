@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { ReplatedAnalysis } from '../types';
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
@@ -115,9 +116,11 @@ EXACT SCHEMA — follow this precisely:
 IMPORTANT: The "ingredients" array in the JSON must contain EVERY ingredient from the input recipe. Do not skip or combine ingredients. Each one gets its own object in the array.`;
 
 export async function analyzeSwaps(input: string): Promise<ReplatedAnalysis> {
-  const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
+  const apiKey =
+    (Constants.expoConfig?.extra?.anthropicApiKey as string | undefined) ??
+    process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error('Anthropic API key is not configured. Add EXPO_PUBLIC_ANTHROPIC_API_KEY to your .env file.');
+    throw new Error('Anthropic API key is not configured.');
   }
 
   const response = await fetch(API_URL, {
